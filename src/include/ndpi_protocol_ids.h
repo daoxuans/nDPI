@@ -507,6 +507,9 @@ typedef enum {
   NDPI_PROTOCOL_IRIS                  = 475,
   NDPI_PROTOCOL_LIBP2P                = 476,
   NDPI_PROTOCOL_MCP                   = 477,
+  NDPI_PROTOCOL_OLLAMA                = 478,
+  NDPI_PROTOCOL_NVIDIA_TRITON         = 479,
+  NDPI_PROTOCOL_VLLM                  = 480,
 
   /* If you add a new protocol, please update the documentation at doc/protocols.rst, too! */
 
