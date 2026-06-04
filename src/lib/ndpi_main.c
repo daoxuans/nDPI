@@ -1291,6 +1291,7 @@ static void init_protocol_defaults(struct ndpi_detection_module_struct *ndpi_str
 			      NDPI_PROTOCOL_RTSP,
 			      NDPI_PROTOCOL_APACHE_THRIFT,
 			      NDPI_PROTOCOL_JSON_RPC,
+			      NDPI_PROTOCOL_MCP,
 			      NDPI_PROTOCOL_HL7,
 			      NDPI_PROTOCOL_MATCHED_BY_CONTENT,
 			      NDPI_PROTOCOL_NO_MORE_SUBPROTOCOLS); /* NDPI_PROTOCOL_HTTP can have (content-matched) subprotocols */
@@ -3013,6 +3014,11 @@ static void init_protocol_defaults(struct ndpi_detection_module_struct *ndpi_str
                           0);
   ndpi_set_proto_defaults(ndpi_str, 0 /* encrypted */, 1 /* nw proto */, NDPI_PROTOCOL_ACCEPTABLE, NDPI_PROTOCOL_LIBP2P,
                           "libp2p", NDPI_PROTOCOL_CATEGORY_VPN, NDPI_PROTOCOL_QOE_CATEGORY_UNSPECIFIED,
+                          ndpi_build_default_ports(ports_a, 0, 0, 0, 0, 0) /* TCP */,
+                          ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */,
+                          0);
+  ndpi_set_proto_defaults(ndpi_str, 1 /* cleartext */, 1 /* app proto */, NDPI_PROTOCOL_ACCEPTABLE, NDPI_PROTOCOL_MCP,
+                          "MCP", NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_QOE_CATEGORY_UNSPECIFIED,
                           ndpi_build_default_ports(ports_a, 0, 0, 0, 0, 0) /* TCP */,
                           ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */,
                           0);
@@ -7409,6 +7415,7 @@ static int dissectors_init(struct ndpi_detection_module_struct *ndpi_str) {
 
   /* JSON-RPC */
   init_json_rpc_dissector(ndpi_str);
+  init_mcp_dissector(ndpi_str);
 
   /* Apache Kafka */
   init_kafka_dissector(ndpi_str);

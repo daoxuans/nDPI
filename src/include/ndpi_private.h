@@ -1040,6 +1040,7 @@ void init_hislip_dissector(struct ndpi_detection_module_struct *ndpi_struct);
 void init_uftp_dissector(struct ndpi_detection_module_struct *ndpi_struct);
 void init_openflow_dissector(struct ndpi_detection_module_struct *ndpi_struct);
 void init_json_rpc_dissector(struct ndpi_detection_module_struct *ndpi_struct);
+void init_mcp_dissector(struct ndpi_detection_module_struct *ndpi_struct);
 void init_kafka_dissector(struct ndpi_detection_module_struct *ndpi_struct);
 void init_nomachine_dissector(struct ndpi_detection_module_struct *ndpi_struct);
 void init_iec62056_dissector(struct ndpi_detection_module_struct *ndpi_struct);
