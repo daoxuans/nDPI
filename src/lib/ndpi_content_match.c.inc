@@ -1729,6 +1729,8 @@ static ndpi_category_match category_match[] = {
    { "bangbros.com",                     NDPI_PROTOCOL_CATEGORY_ADULT_CONTENT, NDPI_PROTOCOL_ACCEPTABLE },
 
    /* Artificial Intelligence / LLM */
+
+   /* --- AI Chat / Web Interface --- */
    { "deepseek.com",                     NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
    { "openai.com",                       NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
    { "chatgpt.com",                      NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
@@ -1736,8 +1738,48 @@ static ndpi_category_match category_match[] = {
    { "notebooklm.google.com",            NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
    { "claude.ai",                        NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
    { "perplexity.ai",                    NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+
+   /* --- AI API / Developer Platform --- */
+   { "anthropic.com",                    NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "generativelanguage.googleapis.com", NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "aistudio.google.com",              NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+
+   /* --- AI Model Hosting / Inference --- */
    { "ollama.com",                       NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
    { "huggingface.com",                  NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "replicate.com",                    NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "together.ai",                      NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "groq.com",                         NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "anyscale.com",                     NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "modal.com",                        NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "banana.dev",                       NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+
+   /* --- AI Platform / Cloud AI --- */
+   { "mistral.ai",                       NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "cohere.ai",                        NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "databricks.com",                   NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "stability.ai",                     NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+
+   /* --- AI Coding Assistant --- */
+   { "cursor.sh",                        NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "codeium.com",                      NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "sourcegraph.com",                  NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+
+   /* --- AI Image Generation --- */
+   { "midjourney.com",                   NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "leonardo.ai",                      NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+
+   /* --- AI Search --- */
+   { "you.com",                          NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "kagi.com",                         NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+
+   /* --- Chinese AI Services --- */
+   { "moonshot.cn",                      NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "zhipuai.cn",                       NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "baichuan-ai.com",                  NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "minimaxi.com",                     NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "stepfun.com",                      NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
+   { "yi.com",                           NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE, NDPI_PROTOCOL_ACCEPTABLE },
 
    /* Same games. We don't have yet (or we don't want...) specific ID for this stuff */
    { "callofduty.com",                   NDPI_PROTOCOL_CATEGORY_GAME, NDPI_PROTOCOL_FUN },

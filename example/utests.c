@@ -1337,6 +1337,14 @@ static void encodeDomainsUnitTest(bool load_suffix_list) {
 
     str = (char*)"something.arpa"; assert(ndpi_get_custom_category_match(ndpi_str, str, strlen(str), &id, &breed) == -1);
     str = (char*)"something.local"; assert(ndpi_get_custom_category_match(ndpi_str, str, strlen(str), &id, &breed) == -1);
+
+    /* AI / LLM category */
+    str = (char*)"openai.com";          assert(ndpi_get_custom_category_match(ndpi_str, str, strlen(str), &id, &breed) == 0); assert(id == NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE);
+    str = (char*)"api.openai.com";      assert(ndpi_get_custom_category_match(ndpi_str, str, strlen(str), &id, &breed) == 0); assert(id == NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE);
+    str = (char*)"claude.ai";           assert(ndpi_get_custom_category_match(ndpi_str, str, strlen(str), &id, &breed) == 0); assert(id == NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE);
+    str = (char*)"anthropic.com";       assert(ndpi_get_custom_category_match(ndpi_str, str, strlen(str), &id, &breed) == 0); assert(id == NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE);
+    str = (char*)"mistral.ai";          assert(ndpi_get_custom_category_match(ndpi_str, str, strlen(str), &id, &breed) == 0); assert(id == NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE);
+    str = (char*)"moonshot.cn";         assert(ndpi_get_custom_category_match(ndpi_str, str, strlen(str), &id, &breed) == 0); assert(id == NDPI_PROTOCOL_CATEGORY_ARTIFICIAL_INTELLIGENCE);
   }
 
   ndpi_exit_detection_module(ndpi_str);
