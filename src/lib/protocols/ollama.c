@@ -47,9 +47,9 @@ static void ndpi_search_ollama(struct ndpi_detection_module_struct *ndpi_struct,
 
   /* Record HTTP method */
   if(payload_len > 4 && memcmp(packet->payload, "GET ", 4) == 0)
-    flow->protos.ollama.http_method = 0;
-  else if(payload_len > 5 && memcmp(packet->payload, "POST ", 5) == 0)
     flow->protos.ollama.http_method = 1;
+  else if(payload_len > 5 && memcmp(packet->payload, "POST ", 5) == 0)
+    flow->protos.ollama.http_method = 2;
 
   /* Helper: save API action name from path */
   #define SAVE_OLLAMA_ACTION(name, nlen) do { \

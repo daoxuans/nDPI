@@ -1862,7 +1862,7 @@ struct ndpi_flow_struct {
     struct {
       char api_action[32];              /* "chat", "generate", "tags", "pull", "push", ... */
       char model_name[64];              /* e.g. "llama3:70b", "mistral" */
-      u_int8_t http_method;             /* 0=GET, 1=POST */
+      u_int8_t http_method;             /* 0=UNKNOWN, 1=GET, 2=POST */
     } ollama;
 
     struct {

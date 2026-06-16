@@ -50,27 +50,109 @@ static const char *mcp_methods[] = {
   NULL
 };
 
-static int mcp_check_method(const u_int8_t *payload, u_int16_t payload_len) {
-  const char *jsonrpc = ndpi_strnstr((const char *)payload, "\"jsonrpc\"", payload_len);
-  const char *method_prefix = ndpi_strnstr((const char *)payload, "\"method\"", payload_len);
+static int mcp_extract_json_string_value(const char *payload, u_int16_t payload_len,
+                                         const char *key,
+                                         char *out, size_t out_len) {
+  char key_buf[48];
+  size_t key_len = strlen(key);
+  const char *kpos, *vstart, *vend;
 
-  if(jsonrpc == NULL || method_prefix == NULL)
+  if(out_len == 0 || key_len == 0 || key_len > (sizeof(key_buf) - 3))
     return 0;
 
-  /* Find the method value after "method" key */
-  const char *colon = ndpi_strnstr(method_prefix, ":\"", payload_len - (method_prefix - (const char *)payload));
+  key_buf[0] = '"';
+  memcpy(&key_buf[1], key, key_len);
+  key_buf[key_len + 1] = '"';
+  key_buf[key_len + 2] = '\0';
+
+  kpos = ndpi_strnstr(payload, key_buf, payload_len);
+  if(kpos == NULL)
+    return 0;
+
+  vstart = kpos + key_len + 2; /* skip "key" */
+  while((const char *)payload + payload_len > vstart &&
+        (*vstart == ' ' || *vstart == '\t' || *vstart == '\r' || *vstart == '\n'))
+    vstart++;
+
+  if((const char *)payload + payload_len <= vstart || *vstart != ':')
+    return 0;
+
+  vstart++;
+  while((const char *)payload + payload_len > vstart &&
+        (*vstart == ' ' || *vstart == '\t' || *vstart == '\r' || *vstart == '\n'))
+    vstart++;
+
+  if((const char *)payload + payload_len <= vstart || *vstart != '"')
+    return 0;
+
+  vstart++; /* skip opening quote */
+  vend = ndpi_strnstr(vstart, "\"", payload_len - (vstart - payload));
+  if(vend == NULL || vend <= vstart)
+    return 0;
+
+  if((size_t)(vend - vstart) >= out_len)
+    return 0;
+
+  memcpy(out, vstart, vend - vstart);
+  out[vend - vstart] = '\0';
+
+  return 1;
+}
+
+static int mcp_extract_header_value_ci(const char *payload, u_int16_t payload_len,
+                                       const char *header,
+                                       char *out, size_t out_len) {
+  const char *hpos, *line_end, *colon, *vstart, *vend;
+
+  if(out_len == 0)
+    return 0;
+
+  hpos = ndpi_strncasestr(payload, header, payload_len);
+  if(hpos == NULL)
+    return 0;
+
+  line_end = ndpi_strnstr(hpos, "\n", payload_len - (hpos - payload));
+  if(line_end == NULL)
+    line_end = payload + payload_len;
+
+  colon = ndpi_strnstr(hpos, ":", line_end - hpos);
   if(colon == NULL)
     return 0;
 
-  const char *value_start = colon + 2; /* skip :\" */
+  vstart = colon + 1;
+  while(vstart < line_end && (*vstart == ' ' || *vstart == '\t'))
+    vstart++;
+
+  vend = line_end;
+  if(vend > vstart && *(vend - 1) == '\r')
+    vend--;
+
+  if(vend <= vstart || (size_t)(vend - vstart) >= out_len)
+    return 0;
+
+  memcpy(out, vstart, vend - vstart);
+  out[vend - vstart] = '\0';
+
+  return 1;
+}
+
+static int mcp_check_method(const u_int8_t *payload, u_int16_t payload_len) {
+  const char *jsonrpc = ndpi_strnstr((const char *)payload, "\"jsonrpc\"", payload_len);
+  char method[48];
+  int method_found;
+
+  if(jsonrpc == NULL)
+    return 0;
+
+  method_found = mcp_extract_json_string_value((const char *)payload, payload_len,
+                                               "method", method, sizeof(method));
 
   int i;
-  for(i = 0; mcp_methods[i] != NULL; i++) {
-    size_t mlen = strlen(mcp_methods[i]);
-    if((const char *)payload + payload_len - value_start >= mlen &&
-       strncmp(value_start, mcp_methods[i], mlen) == 0 &&
-       value_start[mlen] == '\"')
-      return 1;
+  if(method_found) {
+    for(i = 0; mcp_methods[i] != NULL; i++) {
+      if(strcmp(method, mcp_methods[i]) == 0)
+        return 1;
+    }
   }
 
   /* Also check for protocolVersion field (unique to MCP initialize) */
@@ -92,44 +174,12 @@ static void ndpi_search_mcp(struct ndpi_detection_module_struct *ndpi_struct,
 
   /* Helper: extract MCP method name and optional tool_name from JSON body */
   if(payload_len > 30 && payload_str[0] == '{') {
-    const char *method_start = NULL;
-    const char *tool_call = ndpi_strnstr(payload_str, "\"method\":\"tools/call\"", payload_len);
-
-    if(tool_call)
-      method_start = "tools/call";
-    else {
-      int i;
-      for(i = 0; mcp_methods[i] != NULL; i++) {
-        const char *pos = ndpi_strnstr(payload_str, mcp_methods[i], payload_len);
-        if(pos != NULL) {
-          /* Verify it's inside "method":"..." */
-          const char *m = ndpi_strnstr(payload_str, "\"method\"", payload_len);
-          if(m != NULL) {
-            const char *colon = ndpi_strnstr(m, ":\"", payload_len - (m - payload_str));
-            if(colon != NULL) {
-              const char *vs = colon + 2;
-              size_t mlen = strlen(mcp_methods[i]);
-              if((payload_str + payload_len - vs >= (int)mlen) &&
-                 strncmp(vs, mcp_methods[i], mlen) == 0 &&
-                 vs[mlen] == '\"') {
-                method_start = mcp_methods[i];
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    if(method_start) {
-      size_t mlen = strlen(method_start);
-      if(mlen < sizeof(flow->protos.mcp.method)) {
-        memcpy(flow->protos.mcp.method, method_start, mlen);
-        flow->protos.mcp.method[mlen] = '\0';
-      }
+    if(mcp_extract_json_string_value(payload_str, payload_len,
+                                     "method", flow->protos.mcp.method,
+                                     sizeof(flow->protos.mcp.method))) {
 
       /* If tools/call, try to extract tool name: "params":{"name":"read_file"... */
-      if(strcmp(method_start, "tools/call") == 0) {
+      if(strcmp(flow->protos.mcp.method, "tools/call") == 0) {
         const char *name = ndpi_strnstr(payload_str, "\"name\":\"", payload_len);
         if(name != NULL) {
           const char *tv = name + 8; /* skip "name":" */
@@ -145,18 +195,10 @@ static void ndpi_search_mcp(struct ndpi_detection_module_struct *ndpi_struct,
       }
 
       /* Extract protocolVersion if present */
-      const char *pv = ndpi_strnstr(payload_str, "\"protocolVersion\":\"", payload_len);
-      if(pv != NULL) {
-        const char *pvv = pv + 20;
-        const char *pve = ndpi_strnstr(pvv, "\"", payload_len - (pvv - payload_str));
-        if(pve != NULL) {
-          size_t plen = pve - pvv;
-          if(plen < sizeof(flow->protos.mcp.protocol_version)) {
-            memcpy(flow->protos.mcp.protocol_version, pvv, plen);
-            flow->protos.mcp.protocol_version[plen] = '\0';
-          }
-        }
-      }
+      mcp_extract_json_string_value(payload_str, payload_len,
+                                    "protocolVersion",
+                                    flow->protos.mcp.protocol_version,
+                                    sizeof(flow->protos.mcp.protocol_version));
     }
   }
 
@@ -166,26 +208,15 @@ static void ndpi_search_mcp(struct ndpi_detection_module_struct *ndpi_struct,
 
     /* Check for Mcp-Session-Id header - most reliable MCP signature */
     if(packet->payload_packet_len > 0 &&
-       ndpi_strnstr(payload_str, "Mcp-Session-Id",
+       ndpi_strncasestr(payload_str, "mcp-session-id",
                     payload_len) != NULL) {
       NDPI_LOG_INFO(ndpi_struct, "found MCP (Mcp-Session-Id header)\n");
 
       /* Extract session ID value */
-      const char *sid = ndpi_strnstr(payload_str, "Mcp-Session-Id", payload_len);
-      if(sid != NULL) {
-        const char *colon = ndpi_strnstr(sid, ": ", payload_len - (sid - payload_str));
-        if(colon != NULL) {
-          const char *sv = colon + 2;
-          const char *se = ndpi_strnstr(sv, "\r\n", payload_len - (sv - payload_str));
-          if(se != NULL) {
-            size_t slen = se - sv;
-            if(slen < sizeof(flow->protos.mcp.session_id)) {
-              memcpy(flow->protos.mcp.session_id, sv, slen);
-              flow->protos.mcp.session_id[slen] = '\0';
-            }
-          }
-        }
-      }
+      mcp_extract_header_value_ci(payload_str, payload_len,
+                                  "mcp-session-id",
+                                  flow->protos.mcp.session_id,
+                                  sizeof(flow->protos.mcp.session_id));
 
       ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_MCP,
                                  NDPI_PROTOCOL_HTTP, NDPI_CONFIDENCE_DPI);

@@ -2446,6 +2446,175 @@ static void tlsBlocksUnitTest(void) {
   assert(num_blocks == 0);
 }
 
+static void ollamaJsonSerializationUnitTest(void) {
+  struct ndpi_detection_module_struct *ndpi_str;
+  struct ndpi_flow_struct *flow;
+  ndpi_serializer serializer;
+  ndpi_protocol l7_protocol;
+  u_int32_t out_len;
+  char *out;
+
+  ndpi_str = ndpi_init_detection_module(NULL);
+  assert(ndpi_str != NULL);
+
+  flow = ndpi_calloc(1, sizeof(*flow));
+  assert(flow != NULL);
+
+  memset(&l7_protocol, 0, sizeof(l7_protocol));
+  l7_protocol.proto.app_protocol = NDPI_PROTOCOL_OLLAMA;
+
+  snprintf(flow->protos.ollama.api_action,
+           sizeof(flow->protos.ollama.api_action), "%s", "chat");
+  snprintf(flow->protos.ollama.model_name,
+           sizeof(flow->protos.ollama.model_name), "%s", "llama3:70b");
+
+  /* Unknown method must not be serialized. */
+  assert(ndpi_init_serializer(&serializer, ndpi_serialization_format_json) == 0);
+  assert(ndpi_dpi2json(ndpi_str, flow, l7_protocol, &serializer) == 0);
+  out = ndpi_serializer_get_buffer(&serializer, &out_len);
+  assert(out != NULL);
+  assert(ndpi_strnstr(out, "\"method\"", out_len) == NULL);
+  ndpi_term_serializer(&serializer);
+
+  /* Known GET method must be serialized. */
+  flow->protos.ollama.http_method = 1;
+  assert(ndpi_init_serializer(&serializer, ndpi_serialization_format_json) == 0);
+  assert(ndpi_dpi2json(ndpi_str, flow, l7_protocol, &serializer) == 0);
+  out = ndpi_serializer_get_buffer(&serializer, &out_len);
+  assert(out != NULL);
+  assert(ndpi_strnstr(out, "\"method\":\"GET\"", out_len) != NULL);
+  ndpi_term_serializer(&serializer);
+
+  /* Known POST method must be serialized. */
+  flow->protos.ollama.http_method = 2;
+  assert(ndpi_init_serializer(&serializer, ndpi_serialization_format_json) == 0);
+  assert(ndpi_dpi2json(ndpi_str, flow, l7_protocol, &serializer) == 0);
+  out = ndpi_serializer_get_buffer(&serializer, &out_len);
+  assert(out != NULL);
+  assert(ndpi_strnstr(out, "\"method\":\"POST\"", out_len) != NULL);
+  ndpi_term_serializer(&serializer);
+
+  ndpi_free(flow);
+  ndpi_exit_detection_module(ndpi_str);
+}
+
+static u_int16_t buildIPv4TcpPacket(const char *payload,
+                                    u_int16_t payload_len,
+                                    u_int32_t saddr,
+                                    u_int32_t daddr,
+                                    u_int16_t sport,
+                                    u_int16_t dport,
+                                    u_int8_t *buf,
+                                    u_int16_t buf_len) {
+  struct ndpi_iphdr *iph;
+  struct ndpi_tcphdr *tcp;
+  u_int16_t need_len = sizeof(struct ndpi_iphdr) + sizeof(struct ndpi_tcphdr) + payload_len;
+
+  if(buf_len < need_len)
+    return 0;
+
+  memset(buf, 0, need_len);
+
+  iph = (struct ndpi_iphdr *)buf;
+  iph->version = 4;
+  iph->ihl = 5;
+  iph->ttl = 64;
+  iph->protocol = IPPROTO_TCP;
+  iph->tot_len = htons(need_len);
+  iph->saddr = htonl(saddr);
+  iph->daddr = htonl(daddr);
+
+  tcp = (struct ndpi_tcphdr *)(buf + sizeof(struct ndpi_iphdr));
+  tcp->source = htons(sport);
+  tcp->dest = htons(dport);
+  tcp->doff = 5;
+  tcp->ack = 1;
+  tcp->psh = 1;
+  tcp->window = htons(1024);
+
+  memcpy(buf + sizeof(struct ndpi_iphdr) + sizeof(struct ndpi_tcphdr), payload, payload_len);
+
+  return need_len;
+}
+
+static ndpi_protocol detectProtocolFromHttpPayloads(const char **payloads,
+                                                    const u_int8_t *from_client,
+                                                    u_int8_t num_payloads) {
+  struct ndpi_detection_module_struct *ndpi_str;
+  struct ndpi_flow_struct flow;
+  u_int8_t pkt_buf[4096];
+  u_int8_t i;
+  ndpi_protocol detected = { 0 };
+
+  ndpi_str = ndpi_init_detection_module(NULL);
+  assert(ndpi_str != NULL);
+
+  memset(&flow, 0, sizeof(flow));
+
+  for(i = 0; i < num_payloads; i++) {
+    u_int16_t payload_len = (u_int16_t)strlen(payloads[i]);
+    u_int16_t pkt_len;
+
+    if(from_client[i] != 0)
+      pkt_len = buildIPv4TcpPacket(payloads[i], payload_len,
+                                   0x0A000001 /* 10.0.0.1 */,
+                                   0x0A000002 /* 10.0.0.2 */,
+                                   42888, 80,
+                                   pkt_buf, sizeof(pkt_buf));
+    else
+      pkt_len = buildIPv4TcpPacket(payloads[i], payload_len,
+                                   0x0A000002 /* 10.0.0.2 */,
+                                   0x0A000001 /* 10.0.0.1 */,
+                                   80, 42888,
+                                   pkt_buf, sizeof(pkt_buf));
+
+    assert(pkt_len > 0);
+    detected = ndpi_detection_process_packet(ndpi_str, &flow, pkt_buf, pkt_len, (u_int64_t)(i + 1), NULL);
+  }
+
+  detected = ndpi_detection_giveup(ndpi_str, &flow);
+  ndpi_free_flow_data(&flow);
+  ndpi_exit_detection_module(ndpi_str);
+
+  return detected;
+}
+
+static int protoMatched(const ndpi_protocol *p, u_int16_t proto) {
+  return(p->proto.app_protocol == proto || p->proto.master_protocol == proto);
+}
+
+static void tritonKServeFalsePositiveUnitTest(void) {
+  static const char *kserve_only[] = {
+    "POST /v2/models/bert/infer HTTP/1.1\r\n"
+    "Host: kserve.local\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 15\r\n\r\n"
+    "{\"inputs\":[1]}"
+  };
+  static const u_int8_t dir1[] = { 1 };
+  ndpi_protocol p;
+
+  /* Generic KServe v2 path must not be classified as Triton. */
+  p = detectProtocolFromHttpPayloads(kserve_only, dir1, 1);
+  assert(!protoMatched(&p, NDPI_PROTOCOL_NVIDIA_TRITON));
+}
+
+static void vllmOpenAIFalsePositiveUnitTest(void) {
+  static const char *openai_compat[] = {
+    "POST /v1/chat/completions HTTP/1.1\r\n"
+    "Host: api.openai.com\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: 34\r\n\r\n"
+    "{\"model\":\"gpt-4o\",\"messages\":[]}"
+  };
+  static const u_int8_t dir1[] = { 1 };
+  ndpi_protocol p;
+
+  /* OpenAI official host must not be classified as vLLM. */
+  p = detectProtocolFromHttpPayloads(openai_compat, dir1, 1);
+  assert(!protoMatched(&p, NDPI_PROTOCOL_VLLM));
+}
+
 void run_unit_tests() {
 
   checkRankingUnitTest(false);
@@ -2504,5 +2673,8 @@ void run_unit_tests() {
   cryptoUnitTest();
   hexDecodeUnitTest();
   tlsBlocksUnitTest();
+  ollamaJsonSerializationUnitTest();
+  tritonKServeFalsePositiveUnitTest();
+  vllmOpenAIFalsePositiveUnitTest();
 
 }

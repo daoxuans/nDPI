@@ -2100,8 +2100,10 @@ int ndpi_dpi2json(struct ndpi_detection_module_struct *ndpi_struct,
 	ndpi_serialize_string_string(serializer, "action", flow->protos.ollama.api_action);
       if(flow->protos.ollama.model_name[0] != '\0')
 	ndpi_serialize_string_string(serializer, "model", flow->protos.ollama.model_name);
-      ndpi_serialize_string_string(serializer, "method",
-				   flow->protos.ollama.http_method ? "POST" : "GET");
+    if(flow->protos.ollama.http_method == 1)
+  	ndpi_serialize_string_string(serializer, "method", "GET");
+    else if(flow->protos.ollama.http_method == 2)
+  	ndpi_serialize_string_string(serializer, "method", "POST");
       ndpi_serialize_end_of_block(serializer);
     }
     break;
