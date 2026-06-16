@@ -1853,6 +1853,30 @@ struct ndpi_flow_struct {
     } bittorrent;
 
     struct {
+      char method[32];                  /* "tools/call", "initialize", "resources/read", ... */
+      char tool_name[64];               /* MCP tool name extracted from tools/call */
+      char session_id[48];              /* Mcp-Session-Id header value */
+      char protocol_version[12];        /* "protocolVersion" field, e.g. "2024-11-05" */
+    } mcp;
+
+    struct {
+      char api_action[32];              /* "chat", "generate", "tags", "pull", "push", ... */
+      char model_name[64];              /* e.g. "llama3:70b", "mistral" */
+      u_int8_t http_method;             /* 0=GET, 1=POST */
+    } ollama;
+
+    struct {
+      char endpoint[64];                /* e.g. "/v2/health/ready", "/v2/models/llama3/infer" */
+      char model_name[64];              /* model name extracted from URL path */
+      char server_version[12];          /* Triton server version string */
+    } nvidia_triton;
+
+    struct {
+      char api_action[32];              /* "chat/completions", "completions", "embeddings" */
+      char model_name[64];              /* "model" field from request body */
+    } vllm;
+
+    struct {
       char options[48];
       char fingerprint[48];
       char class_ident[48];

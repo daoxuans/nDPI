@@ -85,8 +85,80 @@ static void ndpi_search_mcp(struct ndpi_detection_module_struct *ndpi_struct,
                              struct ndpi_flow_struct *flow)
 {
   struct ndpi_packet_struct *packet = &ndpi_struct->packet;
+  const char *payload_str = (const char *)packet->payload;
+  u_int16_t payload_len = packet->payload_packet_len;
 
   NDPI_LOG_DBG(ndpi_struct, "search MCP\n");
+
+  /* Helper: extract MCP method name and optional tool_name from JSON body */
+  if(payload_len > 30 && payload_str[0] == '{') {
+    const char *method_start = NULL;
+    const char *tool_call = ndpi_strnstr(payload_str, "\"method\":\"tools/call\"", payload_len);
+
+    if(tool_call)
+      method_start = "tools/call";
+    else {
+      int i;
+      for(i = 0; mcp_methods[i] != NULL; i++) {
+        const char *pos = ndpi_strnstr(payload_str, mcp_methods[i], payload_len);
+        if(pos != NULL) {
+          /* Verify it's inside "method":"..." */
+          const char *m = ndpi_strnstr(payload_str, "\"method\"", payload_len);
+          if(m != NULL) {
+            const char *colon = ndpi_strnstr(m, ":\"", payload_len - (m - payload_str));
+            if(colon != NULL) {
+              const char *vs = colon + 2;
+              size_t mlen = strlen(mcp_methods[i]);
+              if((payload_str + payload_len - vs >= (int)mlen) &&
+                 strncmp(vs, mcp_methods[i], mlen) == 0 &&
+                 vs[mlen] == '\"') {
+                method_start = mcp_methods[i];
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if(method_start) {
+      size_t mlen = strlen(method_start);
+      if(mlen < sizeof(flow->protos.mcp.method)) {
+        memcpy(flow->protos.mcp.method, method_start, mlen);
+        flow->protos.mcp.method[mlen] = '\0';
+      }
+
+      /* If tools/call, try to extract tool name: "params":{"name":"read_file"... */
+      if(strcmp(method_start, "tools/call") == 0) {
+        const char *name = ndpi_strnstr(payload_str, "\"name\":\"", payload_len);
+        if(name != NULL) {
+          const char *tv = name + 8; /* skip "name":" */
+          const char *te = ndpi_strnstr(tv, "\"", payload_len - (tv - payload_str));
+          if(te != NULL) {
+            size_t tlen = te - tv;
+            if(tlen < sizeof(flow->protos.mcp.tool_name)) {
+              memcpy(flow->protos.mcp.tool_name, tv, tlen);
+              flow->protos.mcp.tool_name[tlen] = '\0';
+            }
+          }
+        }
+      }
+
+      /* Extract protocolVersion if present */
+      const char *pv = ndpi_strnstr(payload_str, "\"protocolVersion\":\"", payload_len);
+      if(pv != NULL) {
+        const char *pvv = pv + 20;
+        const char *pve = ndpi_strnstr(pvv, "\"", payload_len - (pvv - payload_str));
+        if(pve != NULL) {
+          size_t plen = pve - pvv;
+          if(plen < sizeof(flow->protos.mcp.protocol_version)) {
+            memcpy(flow->protos.mcp.protocol_version, pvv, plen);
+            flow->protos.mcp.protocol_version[plen] = '\0';
+          }
+        }
+      }
+    }
+  }
 
   /* Case 1: MCP over HTTP (Streamable HTTP transport) */
   if(flow->detected_protocol_stack[0] == NDPI_PROTOCOL_HTTP ||
@@ -94,9 +166,27 @@ static void ndpi_search_mcp(struct ndpi_detection_module_struct *ndpi_struct,
 
     /* Check for Mcp-Session-Id header - most reliable MCP signature */
     if(packet->payload_packet_len > 0 &&
-       ndpi_strnstr((const char *)packet->payload, "Mcp-Session-Id",
-                    packet->payload_packet_len) != NULL) {
+       ndpi_strnstr(payload_str, "Mcp-Session-Id",
+                    payload_len) != NULL) {
       NDPI_LOG_INFO(ndpi_struct, "found MCP (Mcp-Session-Id header)\n");
+
+      /* Extract session ID value */
+      const char *sid = ndpi_strnstr(payload_str, "Mcp-Session-Id", payload_len);
+      if(sid != NULL) {
+        const char *colon = ndpi_strnstr(sid, ": ", payload_len - (sid - payload_str));
+        if(colon != NULL) {
+          const char *sv = colon + 2;
+          const char *se = ndpi_strnstr(sv, "\r\n", payload_len - (sv - payload_str));
+          if(se != NULL) {
+            size_t slen = se - sv;
+            if(slen < sizeof(flow->protos.mcp.session_id)) {
+              memcpy(flow->protos.mcp.session_id, sv, slen);
+              flow->protos.mcp.session_id[slen] = '\0';
+            }
+          }
+        }
+      }
+
       ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_MCP,
                                  NDPI_PROTOCOL_HTTP, NDPI_CONFIDENCE_DPI);
       return;
@@ -111,7 +201,7 @@ static void ndpi_search_mcp(struct ndpi_detection_module_struct *ndpi_struct,
         /* Verify JSON content type */
         if((packet->content_line.ptr != NULL &&
             LINE_ENDS(packet->content_line, "application/json")) ||
-           (packet->payload_packet_len > 0 &&
+           (payload_len > 0 &&
             packet->payload[0] == '{')) {
           NDPI_LOG_INFO(ndpi_struct, "found MCP (/mcp URL path)\n");
           ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_MCP,
@@ -122,8 +212,8 @@ static void ndpi_search_mcp(struct ndpi_detection_module_struct *ndpi_struct,
     }
 
     /* Check HTTP payload for MCP method + jsonrpc */
-    if(packet->payload_packet_len > 30 && packet->payload[0] == '{') {
-      if(mcp_check_method(packet->payload, packet->payload_packet_len)) {
+    if(payload_len > 30 && packet->payload[0] == '{') {
+      if(mcp_check_method(packet->payload, payload_len)) {
         NDPI_LOG_INFO(ndpi_struct, "found MCP (method match in HTTP)\n");
         ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_MCP,
                                    NDPI_PROTOCOL_HTTP, NDPI_CONFIDENCE_DPI);
@@ -136,8 +226,8 @@ static void ndpi_search_mcp(struct ndpi_detection_module_struct *ndpi_struct,
   }
 
   /* Case 2: MCP over raw TCP (cleartext without prior HTTP detection) */
-  if(packet->tcp != NULL && packet->payload_packet_len > 30 && packet->payload[0] == '{') {
-    if(mcp_check_method(packet->payload, packet->payload_packet_len)) {
+  if(packet->tcp != NULL && payload_len > 30 && packet->payload[0] == '{') {
+    if(mcp_check_method(packet->payload, payload_len)) {
       NDPI_LOG_INFO(ndpi_struct, "found MCP (raw TCP)\n");
       ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_MCP,
                                  NDPI_PROTOCOL_UNKNOWN, NDPI_CONFIDENCE_DPI);

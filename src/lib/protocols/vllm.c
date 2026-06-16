@@ -41,17 +41,46 @@ static void ndpi_search_vllm(struct ndpi_detection_module_struct *ndpi_struct,
                               struct ndpi_flow_struct *flow)
 {
   struct ndpi_packet_struct *packet = &ndpi_struct->packet;
+  const char *payload_str = (const char *)packet->payload;
+  u_int16_t payload_len = packet->payload_packet_len;
 
   NDPI_LOG_DBG(ndpi_struct, "search vLLM\n");
+
+  /* Helper: extract model name from JSON body */
+  #define EXTRACT_VLLM_MODEL() do { \
+    if(payload_len > 10) { \
+      const char *m = ndpi_strnstr(payload_str, "\"model\":\"", payload_len); \
+      if(m == NULL) m = ndpi_strnstr(payload_str, "\"model_name\":\"", payload_len); \
+      if(m != NULL) { \
+        const char *mv = m; \
+        if(m[7] == '\"') mv = m + 9; /* "model":" */ \
+        else mv = m + 13; /* "model_name":" */ \
+        const char *me = ndpi_strnstr(mv, "\"", payload_len - (mv - payload_str)); \
+        if(me != NULL) { \
+          size_t mlen = me - mv; \
+          if(mlen < sizeof(flow->protos.vllm.model_name)) { \
+            memcpy(flow->protos.vllm.model_name, mv, mlen); \
+            flow->protos.vllm.model_name[mlen] = '\0'; \
+          } \
+        } \
+      } \
+    } \
+  } while(0)
+
+  #define SAVE_VLLM_ACTION(name, nlen) do { \
+    if(nlen < sizeof(flow->protos.vllm.api_action)) { \
+      memcpy(flow->protos.vllm.api_action, name, nlen); \
+      flow->protos.vllm.api_action[nlen] = '\0'; \
+    } \
+  } while(0)
 
   /* Case 1: vLLM over HTTP */
   if(flow->detected_protocol_stack[0] == NDPI_PROTOCOL_HTTP ||
      flow->detected_protocol_stack[1] == NDPI_PROTOCOL_HTTP) {
 
     /* Check for "vllm" identifier in response body - most reliable */
-    if(packet->payload_packet_len > 4 &&
-       ndpi_strnstr((const char *)packet->payload, "vllm",
-                    packet->payload_packet_len) != NULL) {
+    if(payload_len > 4 &&
+       ndpi_strnstr(payload_str, "vllm", payload_len) != NULL) {
       NDPI_LOG_INFO(ndpi_struct, "found vLLM (response body)\n");
       ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_VLLM,
                                  NDPI_PROTOCOL_HTTP, NDPI_CONFIDENCE_DPI);
@@ -71,17 +100,24 @@ static void ndpi_search_vllm(struct ndpi_detection_module_struct *ndpi_struct,
         return;
       }
 
-      if(ndpi_strnstr((const char *)packet->http_url_name.ptr, "/v1/chat/completions",
-                     packet->http_url_name.len) != NULL ||
-         ndpi_strnstr((const char *)packet->http_url_name.ptr, "/v1/completions",
-                     packet->http_url_name.len) != NULL ||
-         ndpi_strnstr((const char *)packet->http_url_name.ptr, "/v1/embeddings",
-                     packet->http_url_name.len) != NULL) {
+      const char *url = (const char *)packet->http_url_name.ptr;
+      u_int16_t url_len = packet->http_url_name.len;
+      int path_matched = 0;
+
+      if(ndpi_strnstr(url, "/v1/chat/completions", url_len) != NULL) {
+        SAVE_VLLM_ACTION("chat/completions", 16); path_matched = 1;
+      } else if(ndpi_strnstr(url, "/v1/completions", url_len) != NULL) {
+        SAVE_VLLM_ACTION("completions", 12); path_matched = 1;
+      } else if(ndpi_strnstr(url, "/v1/embeddings", url_len) != NULL) {
+        SAVE_VLLM_ACTION("embeddings", 10); path_matched = 1;
+      }
+
+      if(path_matched) {
         /* Additional check: content type must be JSON for API calls */
         if((packet->content_line.ptr != NULL &&
             LINE_ENDS(packet->content_line, "application/json")) ||
-           (packet->payload_packet_len > 0 &&
-            packet->payload[0] == '{')) {
+           (payload_len > 0 && packet->payload[0] == '{')) {
+          EXTRACT_VLLM_MODEL();
           NDPI_LOG_INFO(ndpi_struct, "found vLLM (/v1/ URL path)\n");
           ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_VLLM,
                                      NDPI_PROTOCOL_HTTP, NDPI_CONFIDENCE_DPI);
@@ -95,10 +131,9 @@ static void ndpi_search_vllm(struct ndpi_detection_module_struct *ndpi_struct,
   }
 
   /* Case 2: vLLM over raw TCP */
-  if(packet->tcp != NULL && packet->payload_packet_len > 4) {
+  if(packet->tcp != NULL && payload_len > 4) {
     /* Check for "vllm" in response body */
-    if(ndpi_strnstr((const char *)packet->payload, "vllm",
-                    packet->payload_packet_len) != NULL) {
+    if(ndpi_strnstr(payload_str, "vllm", payload_len) != NULL) {
       NDPI_LOG_INFO(ndpi_struct, "found vLLM (raw TCP)\n");
       ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_VLLM,
                                  NDPI_PROTOCOL_UNKNOWN, NDPI_CONFIDENCE_DPI);
@@ -107,6 +142,8 @@ static void ndpi_search_vllm(struct ndpi_detection_module_struct *ndpi_struct,
   }
 
   NDPI_EXCLUDE_DISSECTOR(ndpi_struct, flow);
+  #undef EXTRACT_VLLM_MODEL
+  #undef SAVE_VLLM_ACTION
 }
 
 void init_vllm_dissector(struct ndpi_detection_module_struct *ndpi_struct)

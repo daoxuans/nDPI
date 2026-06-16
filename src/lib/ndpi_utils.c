@@ -2078,6 +2078,58 @@ int ndpi_dpi2json(struct ndpi_detection_module_struct *ndpi_struct,
 #endif
     break;
 
+  case NDPI_PROTOCOL_MCP:
+    {
+      ndpi_serialize_start_of_block(serializer, "mcp");
+      if(flow->protos.mcp.method[0] != '\0')
+	ndpi_serialize_string_string(serializer, "method", flow->protos.mcp.method);
+      if(flow->protos.mcp.tool_name[0] != '\0')
+	ndpi_serialize_string_string(serializer, "tool", flow->protos.mcp.tool_name);
+      if(flow->protos.mcp.session_id[0] != '\0')
+	ndpi_serialize_string_string(serializer, "session_id", flow->protos.mcp.session_id);
+      if(flow->protos.mcp.protocol_version[0] != '\0')
+	ndpi_serialize_string_string(serializer, "protocol_version", flow->protos.mcp.protocol_version);
+      ndpi_serialize_end_of_block(serializer);
+    }
+    break;
+
+  case NDPI_PROTOCOL_OLLAMA:
+    {
+      ndpi_serialize_start_of_block(serializer, "ollama");
+      if(flow->protos.ollama.api_action[0] != '\0')
+	ndpi_serialize_string_string(serializer, "action", flow->protos.ollama.api_action);
+      if(flow->protos.ollama.model_name[0] != '\0')
+	ndpi_serialize_string_string(serializer, "model", flow->protos.ollama.model_name);
+      ndpi_serialize_string_string(serializer, "method",
+				   flow->protos.ollama.http_method ? "POST" : "GET");
+      ndpi_serialize_end_of_block(serializer);
+    }
+    break;
+
+  case NDPI_PROTOCOL_NVIDIA_TRITON:
+    {
+      ndpi_serialize_start_of_block(serializer, "triton");
+      if(flow->protos.nvidia_triton.endpoint[0] != '\0')
+	ndpi_serialize_string_string(serializer, "endpoint", flow->protos.nvidia_triton.endpoint);
+      if(flow->protos.nvidia_triton.model_name[0] != '\0')
+	ndpi_serialize_string_string(serializer, "model", flow->protos.nvidia_triton.model_name);
+      if(flow->protos.nvidia_triton.server_version[0] != '\0')
+	ndpi_serialize_string_string(serializer, "version", flow->protos.nvidia_triton.server_version);
+      ndpi_serialize_end_of_block(serializer);
+    }
+    break;
+
+  case NDPI_PROTOCOL_VLLM:
+    {
+      ndpi_serialize_start_of_block(serializer, "vllm");
+      if(flow->protos.vllm.api_action[0] != '\0')
+	ndpi_serialize_string_string(serializer, "action", flow->protos.vllm.api_action);
+      if(flow->protos.vllm.model_name[0] != '\0')
+	ndpi_serialize_string_string(serializer, "model", flow->protos.vllm.model_name);
+      ndpi_serialize_end_of_block(serializer);
+    }
+    break;
+
   case NDPI_PROTOCOL_IPSEC:
     {
       u_int32_t buffer_len;
