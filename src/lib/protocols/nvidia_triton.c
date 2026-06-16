@@ -36,12 +36,41 @@
    - GET /v2/models, /v2/models/{name}
    - POST /v2/models/{name}/infer */
 
+static int triton_has_primary_signature(const char *payload_str, u_int16_t payload_len)
+{
+  if(payload_len <= 10)
+    return 0;
+
+  return(ndpi_strnstr(payload_str, "\"server_id\"", payload_len) != NULL &&
+         ndpi_strnstr(payload_str, "triton", payload_len) != NULL);
+}
+
+static int triton_has_secondary_signature(struct ndpi_packet_struct *packet,
+                                          const char *payload_str,
+                                          u_int16_t payload_len)
+{
+  if(packet->server_line.ptr != NULL && packet->server_line.len > 0 &&
+     ndpi_strncasestr((const char *)packet->server_line.ptr, "triton", packet->server_line.len) != NULL)
+    return 1;
+
+  /* Server metadata compatible with KServe v2: {"name":"triton", "version":"...", "extensions":[...]} */
+  if(payload_len > 20 &&
+     ndpi_strnstr(payload_str, "\"name\":\"triton\"", payload_len) != NULL &&
+     ndpi_strnstr(payload_str, "\"version\"", payload_len) != NULL &&
+     ndpi_strnstr(payload_str, "\"extensions\"", payload_len) != NULL)
+    return 1;
+
+  return 0;
+}
+
 static void ndpi_search_nvidia_triton(struct ndpi_detection_module_struct *ndpi_struct,
                                         struct ndpi_flow_struct *flow)
 {
   struct ndpi_packet_struct *packet = &ndpi_struct->packet;
   const char *payload_str = (const char *)packet->payload;
   u_int16_t payload_len = packet->payload_packet_len;
+  int weak_path_match = 0;
+  int strong_signature_match = 0;
 
   NDPI_LOG_DBG(ndpi_struct, "search NVIDIA Triton\n");
 
@@ -64,30 +93,8 @@ static void ndpi_search_nvidia_triton(struct ndpi_detection_module_struct *ndpi_
   if(flow->detected_protocol_stack[0] == NDPI_PROTOCOL_HTTP ||
      flow->detected_protocol_stack[1] == NDPI_PROTOCOL_HTTP) {
 
-    /* Check for "server_id":"triton" in response body - most distinctive */
-    if(payload_len > 10 &&
-       ndpi_strnstr(payload_str, "\"server_id\"", payload_len) != NULL &&
-       ndpi_strnstr(payload_str, "triton", payload_len) != NULL) {
-      NDPI_LOG_INFO(ndpi_struct, "found NVIDIA Triton (server_id in body)\n");
-
-      /* Extract server version if present: "version":"2.x" */
-      const char *v = ndpi_strnstr(payload_str, "\"version\":\"", payload_len);
-      if(v != NULL) {
-        const char *vv = v + 11;
-        const char *ve = ndpi_strnstr(vv, "\"", payload_len - (vv - payload_str));
-        if(ve != NULL) {
-          size_t vlen = ve - vv;
-          if(vlen < sizeof(flow->protos.nvidia_triton.server_version)) {
-            memcpy(flow->protos.nvidia_triton.server_version, vv, vlen);
-            flow->protos.nvidia_triton.server_version[vlen] = '\0';
-          }
-        }
-      }
-
-      ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_NVIDIA_TRITON,
-                                 NDPI_PROTOCOL_HTTP, NDPI_CONFIDENCE_DPI);
-      return;
-    }
+    strong_signature_match = triton_has_primary_signature(payload_str, payload_len) ||
+                             triton_has_secondary_signature(packet, payload_str, payload_len);
 
     /* Check URL path for Triton-specific /v2/ KServe endpoints */
     if(packet->http_url_name.ptr != NULL && packet->http_url_name.len > 0) {
@@ -98,6 +105,7 @@ static void ndpi_search_nvidia_triton(struct ndpi_detection_module_struct *ndpi_
          ndpi_strnstr(url, "/v2/models/", url_len) != NULL ||
          LINE_ENDS(packet->http_url_name, "/v2") ||
          ndpi_strnstr(url, "/infer", url_len) != NULL) {
+        weak_path_match = 1;
 
         /* Save the specific endpoint */
         if(ndpi_strnstr(url, "/v2/health/live", url_len) != NULL)
@@ -123,12 +131,36 @@ static void ndpi_search_nvidia_triton(struct ndpi_detection_module_struct *ndpi_
           flow->protos.nvidia_triton.endpoint[ep_len] = '\0';
         }
 
-        NDPI_LOG_INFO(ndpi_struct, "found NVIDIA Triton (/v2/ URL path)\n");
-        ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_NVIDIA_TRITON,
-                                   NDPI_PROTOCOL_HTTP, NDPI_CONFIDENCE_DPI);
-        return;
       }
     }
+
+    if(strong_signature_match) {
+      NDPI_LOG_INFO(ndpi_struct, "found NVIDIA Triton (strong signature)\n");
+
+      /* Extract server version if present: "version":"2.x" */
+      if(payload_len > 11) {
+        const char *v = ndpi_strnstr(payload_str, "\"version\":\"", payload_len);
+        if(v != NULL) {
+          const char *vv = v + 11;
+          const char *ve = ndpi_strnstr(vv, "\"", payload_len - (vv - payload_str));
+          if(ve != NULL) {
+            size_t vlen = ve - vv;
+            if(vlen < sizeof(flow->protos.nvidia_triton.server_version)) {
+              memcpy(flow->protos.nvidia_triton.server_version, vv, vlen);
+              flow->protos.nvidia_triton.server_version[vlen] = '\0';
+            }
+          }
+        }
+      }
+
+      ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_NVIDIA_TRITON,
+                                 NDPI_PROTOCOL_HTTP, NDPI_CONFIDENCE_DPI);
+      return;
+    }
+
+    /* Keep the dissector active if a KServe v2 path is seen, waiting for strong confirmation. */
+    if(weak_path_match)
+      return;
 
     NDPI_EXCLUDE_DISSECTOR(ndpi_struct, flow);
     return;
@@ -136,22 +168,11 @@ static void ndpi_search_nvidia_triton(struct ndpi_detection_module_struct *ndpi_
 
   /* Case 2: Triton over raw TCP */
   if(packet->tcp != NULL && payload_len > 10) {
-    /* Check for "server_id":"triton" in response */
-    if(ndpi_strnstr(payload_str, "\"server_id\"", payload_len) != NULL &&
-       ndpi_strnstr(payload_str, "triton", payload_len) != NULL) {
-      NDPI_LOG_INFO(ndpi_struct, "found NVIDIA Triton (raw TCP)\n");
-      ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_NVIDIA_TRITON,
-                                 NDPI_PROTOCOL_UNKNOWN, NDPI_CONFIDENCE_DPI);
-      return;
-    }
+    strong_signature_match = triton_has_primary_signature(payload_str, payload_len) ||
+                             triton_has_secondary_signature(packet, payload_str, payload_len);
 
-    /* Check for HTTP request with /v2/ path */
-    if(payload_len > 6 &&
-       (memcmp(packet->payload, "GET ", 4) == 0 || memcmp(packet->payload, "POST ", 5) == 0) &&
-       ndpi_strnstr(payload_str, "/v2/", payload_len) != NULL) {
-      /* Save endpoint from raw request */
-      EXTRACT_TRITON_MODEL_FROM_PATH(payload_str, payload_len);
-      NDPI_LOG_INFO(ndpi_struct, "found NVIDIA Triton (raw TCP request)\n");
+    if(strong_signature_match) {
+      NDPI_LOG_INFO(ndpi_struct, "found NVIDIA Triton (raw TCP strong signature)\n");
       ndpi_set_detected_protocol(ndpi_struct, flow, NDPI_PROTOCOL_NVIDIA_TRITON,
                                  NDPI_PROTOCOL_UNKNOWN, NDPI_CONFIDENCE_DPI);
       return;
